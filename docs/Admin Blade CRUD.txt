@@ -1,0 +1,405 @@
+Admin Blade CRUD
+
+
+composer require laravel/breeze --dev
+php artisan breeze:install blade
+npm install && npm run dev
+//php artisan migrate
+
+------------------------------
+routes/web.php
+
+<?php
+
+use App\Http\Controllers\ProfileController;
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Admin\EventController;
+
+Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function() {
+    Route::get('events', [EventController::class, 'index'])->name('events.index');
+    Route::get('events/create', [EventController::class, 'create'])->name('events.create');
+    Route::post('events', [EventController::class, 'store'])->name('events.store');
+    Route::get('events/{event}/edit', [EventController::class, 'edit'])->name('events.edit');
+    Route::put('events/{event}', [EventController::class, 'update'])->name('events.update');
+    Route::delete('events/{event}', [EventController::class, 'destroy'])->name('events.destroy');
+});
+------------------------------
+
+
+php artisan make:controller Admin/EventController --resource
+
+Http/Controllers/Admin/EventController.php
+
+<?php
+
+namespace App\Http\Controllers\Admin;
+
+use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
+use App\Models\Event;
+
+class EventController extends Controller
+{
+    public function index()
+    {
+        $events = Event::all();
+        return view('admin.events.index', compact('events'));
+    }
+
+    public function create()
+    {
+        return view('admin.events.create');
+    }
+
+    public function store(Request $request)
+    {
+        $request->validate([
+            'title' => 'required|string|max:255',
+            'date' => 'required|date',
+            'location' => 'required|string',
+            'description' => 'nullable|string',
+            'max_attendees' => 'nullable|integer|min:0',
+        ]);
+
+        Event::create($request->all());
+        return redirect()->route('admin.events.index')->with('success','Event created.');
+    }
+
+    public function edit(Event $event)
+    {
+        return view('admin.events.edit', compact('event'));
+    }
+
+    public function update(Request $request, Event $event)
+    {
+        $request->validate([
+            'title' => 'required|string|max:255',
+            'date' => 'required|date',
+            'location' => 'required|string',
+            'description' => 'nullable|string',
+            'max_attendees' => 'nullable|integer|min:0',
+        ]);
+
+        $event->update($request->all());
+        return redirect()->route('admin.events.index')->with('success','Event updated.');
+    }
+
+    public function destroy(Event $event)
+    {
+        $event->delete();
+        return redirect()->route('admin.events.index')->with('success','Event deleted.');
+    }
+}
+--------------------------------
+
+resources/views/admin/events/
+index.blade.php //adminnak szerkeszteni is lehet!
+
+<x-app-layout>
+<div class="container">
+    
+    @if(auth()->user()->is_admin)
+        <h1 class="mb-4">Események kezelése</h1>
+    @else
+        <h1 class="mb-4">Események</h1>
+    @endif
+
+
+    {{-- sikerüzenet --}}
+    @if(session('success'))
+        <div class="alert alert-success">
+            {{ session('success') }}
+        </div>
+    @endif
+
+    {{-- új esemény gomb csak adminnak --}}
+    @if(auth()->user()->is_admin)
+        <a href="{{ route('admin.events.create') }}" class="btn btn-primary mb-3">
+            ➕ Új esemény
+        </a>
+    @endif
+
+    {{-- esemény lista --}}
+    <table class="table table-bordered table-striped">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Cím</th>
+                <th>Dátum</th>
+                <th>Helyszín</th>
+                <th>Leírás</th>
+                <th>Max. résztvevők</th>
+                @if(auth()->user()->is_admin)
+                    <th style="width: 200px">Műveletek</th>
+                @endif
+            </tr>
+        </thead>
+        <tbody>
+        @forelse($events as $event)
+            <tr>
+                <td>{{ $event->id }}</td>
+                <td>{{ $event->title }}</td>
+                <td>{{ $event->date }}</td>
+                <td>{{ $event->location }}</td>
+                <td>{{ $event->description }}</td>
+                <td>{{ $event->max_attendees }}</td>
+                {{-- szerkesztés / törlés gombok csak adminnak --}}
+                @if(auth()->user()->is_admin)
+                    <td>
+                        <a href="{{ route('admin.events.edit', $event) }}"
+                           class="btn btn-sm btn-warning">
+                            ✏️ Szerkesztés
+                        </a>
+
+                        <form action="{{ route('admin.events.destroy', $event) }}"
+                              method="POST"
+                              style="display:inline-block"
+                              onsubmit="return confirm('Biztosan törlöd?');">
+                            @csrf
+                            @method('DELETE')
+                            <button class="btn btn-sm btn-danger">
+                                🗑️ Törlés
+                            </button>
+                        </form>
+                    </td>
+                @endif
+            </tr>
+        @empty
+            <tr>
+                <td colspan="5" class="text-center">
+                    Nincs még esemény az adatbázisban.
+                </td>
+            </tr>
+        @endforelse
+        </tbody>
+    </table>
+</div>
+</x-app-layout>
+--------------------------
+
+edit.blade.php
+
+
+<x-app-layout>
+<div class="container">
+    <h1 class="mb-4">Esemény szerkesztése</h1>
+
+    {{-- validációs hibák --}}
+    @if ($errors->any())
+        <div class="alert alert-danger">
+            <ul class="mb-0">
+                @foreach ($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
+    {{-- szerkesztő űrlap --}}
+    <form action="{{ route('admin.events.update', $event) }}" method="POST">
+        @csrf
+        @method('PUT')
+
+        <div class="mb-3">
+            <label class="form-label">Esemény címe</label>
+            <input
+                type="text"
+                name="title"
+                class="form-control"
+                value="{{ old('title', $event->title) }}"
+                required
+            >
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Dátum</label>
+            <input
+                type="datetime-local"
+                name="date"
+                class="form-control"
+                value="{{ old('date', $event->date->format('Y-m-d\TH:i')) }}"
+                required
+            >
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Helyszín</label>
+            <input
+                type="text"
+                name="location"
+                class="form-control"
+                value="{{ old('location', $event->location) }}"
+                required
+            >
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Leírás</label>
+            <textarea
+                name="description"
+                class="form-control"
+                rows="4"
+            >{{ old('description', $event->description) }}</textarea>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Maximális résztvevők száma</label>
+            <input
+                type="number"
+                name="max_attendees"
+                class="form-control"
+                value="{{ old('max_attendees', $event->max_attendees) }}"
+                min="0"
+            >
+        </div>
+
+        <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-success">
+                💾 Mentés
+            </button>
+
+            <a href="{{ route('admin.events.index') }}" class="btn btn-secondary">
+                ↩️ Vissza
+            </a>
+        </div>
+    </form>
+</div>
+</x-app-layout>
+
+
+-----------------------------------
+create.blade.php
+
+<x-app-layout>
+<div class="container">
+    <h1 class="mb-4">Új esemény létrehozása</h1>
+
+    {{-- validációs hibák --}}
+    @if ($errors->any())
+        <div class="alert alert-danger">
+            <ul class="mb-0">
+                @foreach ($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
+    {{-- létrehozó űrlap --}}
+    <form action="{{ route('admin.events.store') }}" method="POST">
+        @csrf
+
+        <div class="mb-3">
+            <label class="form-label">Esemény címe</label>
+            <input
+                type="text"
+                name="title"
+                class="form-control"
+                value="{{ old('title') }}"
+                required
+            >
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Dátum</label>
+            <input
+                type="datetime-local"
+                name="date"
+                class="form-control"
+                value="{{ old('date', now()->format('Y-m-d\TH:i')) }}"
+                required
+            >
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Helyszín</label>
+            <input
+                type="text"
+                name="location"
+                class="form-control"
+                value="{{ old('location') }}"
+                required
+            >
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Leírás</label>
+            <textarea
+                name="description"
+                class="form-control"
+                rows="4"
+            >{{ old('description') }}</textarea>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Maximális résztvevők száma</label>
+            <input  
+                type="number"
+                name="max_attendees"
+                class="form-control"
+                value="{{ old('max_attendees') }}"
+                min="0"
+            >
+        </div>
+
+        <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-success">
+                ➕ Létrehozás
+            </button>
+
+            <a href="{{ route('admin.events.index') }}" class="btn btn-secondary">
+                ↩️ Vissza
+            </a>
+        </div>
+    </form>
+</div>
+</x-app-layout>
+-------------------------------------------------------
+Ezután teszt:
+
+
+A. XAMPP futtatja Laravel-t (htdocs/eventRegistration/public)
+B. npm run dev
+C. böngészőbe: http://127.0.0.1/eventRegistration/public/admin/events
+D. Minden CSS/JS változtatás azonnal frissül a Blade nézetben (hot reload).
+
+
+az a baj, hogy így a http://127.0.0.1/eventRegistration/public/admin/events/3/edit-t böngészőbe beírva tudja szerkeszteni egy belépett felahasználó
+
+
+úgyhogy:
+
+1. php artisan make:middleware AdminMiddleware
+
+app/Http/Middleware/AdminMiddleware.php
+
+<?php
+
+namespace App\Http\Middleware;
+
+use Closure;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+
+class AdminMiddleware
+{
+    public function handle(Request $request, Closure $next)
+    {
+        $user = Auth::user();
+
+        if (!$user || !$user->is_admin) {
+            abort(403, 'Nincs jogosultságod az oldal eléréséhez.');
+        }
+
+        return $next($request);
+    }
+}
+
+2. app/Http/Kernel.php → $routeMiddleware részhez add hozzá:
+
+'admin' => \App\Http\Middleware\AdminMiddleware::class,
+
+3. Ezután a jelenlegi admin route groupban:
+
+Route::middleware(['auth', 'admin'])
+    ->prefix('admin')
