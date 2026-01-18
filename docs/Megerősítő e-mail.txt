@@ -1,0 +1,122 @@
+Megerősítő e-mail (email verification) Laravelben
+
+Amikor egy felhasználó regisztrál, a rendszer automatikusan küld egy e-mailt egy egyedi, aláírt linkkel. 
+A felhasználónak meg kell nyitnia, hogy a rendszerben az e-mail címét „verified” (megerősített) állapotba tegye.
+A Laravel ezt beépítve támogatja.
+
+1. User modell MustVerifyEmail interfésszel, a Laravel így tudja, hogy emailmegerősítés van beállítva
+
+use Illuminate\Contracts\Auth\MustVerifyEmail;
+
+class User extends Authenticatable implements MustVerifyEmail
+{
+    use HasApiTokens, HasFactory, Notifiable, SoftDeletes;
+    // …
+}
+
+
+2. Email küldése regisztráció után
+Laravel automatikusan hallgatja a Registered eseményt és elindítja a beépített listener-t (SendEmailVerificationNotification), amely kiküldi a megerősítő e-mailt a felhasználónak.
+
+AuthController.php módosítása:
+
+use Illuminate\Auth\Events\Registered;
+
+…
+
+//register metódus végén email küldése
+event(new Registered($user));
+//A Registered esemény egy „trigger”, amely a Laravel beépített email verification mechanizmusát aktiválja.
+
+
+3. api.php módosítása
+
+use Illuminate\Foundation\Auth\EmailVerificationRequest;
+use Illuminate\Http\Request;
+
+// Email megerősítő link kezelése
+Route::get('/email/verify/{id}/{hash}', function (
+    EmailVerificationRequest $request
+) {
+    $request->fulfill();
+
+    return response()->json([
+        'message' => 'Email successfully verified'
+    ]);
+})->middleware(['auth:sanctum', 'signed'])
+  ->name('verification.verify');
+
+// Megerősítő email újraküldése
+Route::post('/email/verification-notification', function (Request $request) {
+    $request->user()->sendEmailVerificationNotification();
+
+    return response()->json([
+        'message' => 'Verification email sent'
+    ]);
+})->middleware(['auth:sanctum', 'throttle:6,1']);
+
+
+4. login metódus módosítása
+
+// Hibás email vagy jelszó
+        if (!$user || !Hash::check($request->password, $user->password)) {
+            return response()->json(['message' => 'Invalid email or password'], 401);
+        }
+
+        // Email NINCS megerősítve
+        if (!$user->hasVerifiedEmail()) {
+            return response()->json([
+                'message' => 'Email address is not verified'
+            ], 403);
+        }
+
+        // Token létrehozása
+        $token = $user->createToken('api-token')->plainTextToken;
+
+5. „verified” middleware beállítása az api.php-ben
+
+Route::middleware(['auth:sanctum', 'verified'])->group(function () {
+	// ide csak megerősített userek jutnak be
+	...
+
+
+6. Levelezőszerver beállítása: Mailtrap.io
+a) Regisztrálás a https://mailtrap.io
+b) SandBox/Settings -ből kiszedjük a username és password-öt
+c) ennek megfelelően a .env fájl módosítása
+
+MAIL_MAILER=smtp
+MAIL_HOST=sandbox.smtp.mailtrap.io
+MAIL_PORT=2525
+MAIL_USERNAME=d910d33a4aee1b
+MAIL_PASSWORD=****f1fa
+MAIL_ENCRYPTION=tls
+MAIL_FROM_ADDRESS="noreply@event.local"
+MAIL_FROM_NAME="Event Registration"
+
+
+7. .env változtatás után mindig futtatni kell:
+php artisan config:clear
+php artisan cache:clear
+php artisan config:cache
+
+
+8. Ezután Postman POST request összeállítása és indítása
+
+
+
+
+Google Fiók/Biztonság és bejelentkezés / Kétlépcsős azonosítás ésAzonosítókulcsok és biztonsági kulcsok
+-------------------------
+
+
+
+6. Email link és megerősítés
+Amikor a felhasználó rákattint a linkre, az URL egy speciális aláírt útvonalat hív meg (verification.verify), ami ellenőrzi és beállítja a email_verified_at mezőt a felhasználónál.
+
+7. Routeok és middleware
+Laravelhez általában több route tartozik:
+/email/verify – értesítést mutat, hogy ellenőrizze a mailt
+/email/verify/{id}/{hash} – ez maga a megerősítő link
+/email/verification-notification – újraküldés
+Ezek általában auth és signed middleware-rel vannak védve.

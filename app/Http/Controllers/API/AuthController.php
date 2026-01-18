@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use App\Models\User;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Auth\Events\Registered;
 
 class AuthController extends Controller
 {
@@ -21,7 +22,7 @@ class AuthController extends Controller
             $validated = $request->validate([
                 'name' => 'required|string|max:255',
                 'email' => 'required|email|unique:users,email',
-                'password' => 'required|string|min:6',
+                'password' => 'required|string|confirmed|min:6',
                 'phone' => 'nullable|string|max:20',
             ]);
         } catch (ValidationException $e) {
@@ -36,6 +37,9 @@ class AuthController extends Controller
         $validated['remember_token'] = Str::random(10);
 
         $user = User::create($validated);
+
+        //megerősítő email küldése
+        event(new Registered($user));
 
         return response()->json([
             'message' => 'User created successfully',
@@ -61,10 +65,17 @@ class AuthController extends Controller
 
         $user = User::where('email', $request->email)->first();
 
+        // Hibás email vagy jelszó
         if (!$user || !Hash::check($request->password, $user->password)) {
             return response()->json(['message' => 'Invalid email or password'], 401);
         }
 
+        // Email NINCS megerősítve
+        if (!$user->hasVerifiedEmail()) {
+            return response()->json([
+                'message' => 'Email address is not verified'
+            ], 403);
+        }
 
         // Token létrehozása
         $token = $user->createToken('api-token')->plainTextToken;

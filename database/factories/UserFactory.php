@@ -30,7 +30,7 @@ class UserFactory extends Factory
             'email' => strtolower(Str::ascii($firstName) . '.' . Str::ascii($lastName)) . $randomNumber .'@events.hu',
             'phone' => $faker->numerify('+36## ### ####'),
             //'is_admin' => false,
-            'email_verified_at' => now(),
+            //'email_verified_at' => now(),
             'password' => bcrypt('jelszo123'), 
             'remember_token' => Str::random(10),
         ];
