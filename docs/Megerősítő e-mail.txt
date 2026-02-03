@@ -31,29 +31,55 @@ event(new Registered($user));
 
 3. api.php módosítása
 
-use Illuminate\Foundation\Auth\EmailVerificationRequest;
+// use Illuminate\Foundation\Auth\EmailVerificationRequest; ez nem kell
 use Illuminate\Http\Request;
 
 // Email megerősítő link kezelése
-Route::get('/email/verify/{id}/{hash}', function (
-    EmailVerificationRequest $request
-) {
-    $request->fulfill();
+Route::get('/email/verify/{id}/{hash}', function ($id, $hash) {
 
-    return response()->json([
-        'message' => 'Email successfully verified'
-    ]);
-})->middleware(['auth:sanctum', 'signed'])
-  ->name('verification.verify');
+    // Felhasználó lekérése
+    $user = User::findOrFail($id);
+
+    // Ellenőrizzük, hogy a hash megegyezik az email hash-sel
+    if (! hash_equals((string) $hash, sha1($user->email))) {
+        abort(403, 'Invalid verification link');
+    }
+
+    // Már megerősített felhasználó
+    if ($user->hasVerifiedEmail()) {
+        return response()->json(['message' => 'Email already verified']);
+    }
+
+    // Email megerősítése
+    $user->markEmailAsVerified();
+
+    return response()->json(['message' => 'Email successfully verified']);
+
+})->name('verification.verify')
+  ->middleware('signed'); // aláírt URL ellenőrzés
 
 // Megerősítő email újraküldése
 Route::post('/email/verification-notification', function (Request $request) {
-    $request->user()->sendEmailVerificationNotification();
+    $request->validate([
+        'email' => 'required|email'
+    ]);
+
+    $user = User::where('email', $request->email)->firstOrFail();
+
+    if ($user->hasVerifiedEmail()) {
+        return response()->json([
+            'message' => 'Email already verified'
+        ], 400);
+    }
+
+    // Email küldése
+    $user->sendEmailVerificationNotification();
 
     return response()->json([
         'message' => 'Verification email sent'
     ]);
-})->middleware(['auth:sanctum', 'throttle:6,1']);
+})
+->middleware('throttle:3,1'); // max 3 kérelem / perc
 
 
 4. login metódus módosítása
